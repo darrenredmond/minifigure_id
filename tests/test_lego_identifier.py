@@ -208,7 +208,7 @@ class TestLegoIdentifier:
         
         # Check keyword arguments  
         kwargs = call_args.kwargs
-        assert kwargs['model'] == "claude-3-haiku-20240307"
+        assert kwargs['model'] == "claude-4-sonnet-20250514"
         assert kwargs['max_tokens'] == 2000
         assert 'messages' in kwargs
         assert 'system' in kwargs

@@ -91,8 +91,19 @@ class BrickLinkClient:
             headers = self._get_oauth_headers("GET", url, params)
             response = requests.get(url, params=params, headers=headers, timeout=10)
 
+            data = response.json()
+            
+            # BrickLink returns 200 with error in body for auth failures
+            if "meta" in data and data["meta"].get("code") == 401:
+                meta = data["meta"]
+                if "TOKEN_IP_MISMATCHED" in meta.get("description", ""):
+                    print(f"BrickLink API: IP address not whitelisted for these credentials")
+                    return []
+                else:
+                    print(f"BrickLink API authentication failed: {meta.get('message', 'Unknown error')}")
+                    return []
+            
             if response.status_code == 200:
-                data = response.json()
                 return data.get("data", [])
             elif response.status_code == 401:
                 data = response.json()
@@ -136,8 +147,19 @@ class BrickLinkClient:
             headers = self._get_oauth_headers("GET", url, params)
             response = requests.get(url, params=params, headers=headers, timeout=10)
 
+            data = response.json()
+            
+            # BrickLink returns 200 with error in body for auth failures
+            if "meta" in data and data["meta"].get("code") == 401:
+                meta = data["meta"]
+                if "TOKEN_IP_MISMATCHED" in meta.get("description", ""):
+                    print(f"BrickLink API: IP address not whitelisted for these credentials")
+                    return None
+                else:
+                    print(f"BrickLink API authentication failed: {meta.get('message', 'Unknown error')}")
+                    return None
+            
             if response.status_code == 200:
-                data = response.json()
                 price_data = data.get("data", {})
 
                 return MarketData(
@@ -187,8 +209,19 @@ class BrickLinkClient:
             headers = self._get_oauth_headers("GET", url)
             response = requests.get(url, headers=headers, timeout=10)
 
+            data = response.json()
+            
+            # BrickLink returns 200 with error in body for auth failures
+            if "meta" in data and data["meta"].get("code") == 401:
+                meta = data["meta"]
+                if "TOKEN_IP_MISMATCHED" in meta.get("description", ""):
+                    print(f"BrickLink API: IP address not whitelisted for these credentials")
+                    return None
+                else:
+                    print(f"BrickLink API authentication failed: {meta.get('message', 'Unknown error')}")
+                    return None
+            
             if response.status_code == 200:
-                data = response.json()
                 return data.get("data", {})
             else:
                 return None
