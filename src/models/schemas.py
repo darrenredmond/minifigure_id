@@ -1,0 +1,82 @@
+from pydantic import BaseModel, Field
+from typing import List, Optional, Dict, Any
+from datetime import datetime
+from enum import Enum
+
+
+class ItemType(str, Enum):
+    MINIFIGURE = "minifigure"
+    SET = "set"
+    PART = "part"
+
+
+class ItemCondition(str, Enum):
+    NEW = "new"
+    USED_COMPLETE = "used_complete"
+    USED_INCOMPLETE = "used_incomplete"
+    DAMAGED = "damaged"
+
+
+class RecommendationCategory(str, Enum):
+    MUSEUM = "museum"
+    RESALE = "resale"
+    COLLECTION = "collection"
+
+
+class PlatformType(str, Enum):
+    BRICKLINK = "bricklink"
+    EBAY = "ebay"
+    FACEBOOK_MARKETPLACE = "facebook_marketplace"
+    LOCAL_AUCTION = "local_auction"
+
+
+class LegoItem(BaseModel):
+    item_number: Optional[str] = None
+    name: Optional[str] = None
+    item_type: ItemType
+    condition: ItemCondition
+    year_released: Optional[int] = None
+    theme: Optional[str] = None
+    category: Optional[str] = None
+    pieces: Optional[int] = None
+
+
+class MarketData(BaseModel):
+    current_price: Optional[float] = None
+    avg_price_6m: Optional[float] = None
+    price_trend: Optional[str] = None  # "increasing", "decreasing", "stable"
+    times_sold: Optional[int] = None
+    last_sold_date: Optional[datetime] = None
+    availability: Optional[str] = None  # "common", "uncommon", "rare", "very_rare"
+
+
+class ValuationResult(BaseModel):
+    estimated_value: float
+    confidence_score: float = Field(ge=0, le=1)
+    recommendation: RecommendationCategory
+    reasoning: str
+    suggested_platforms: List[PlatformType]
+    market_data: Optional[MarketData] = None
+
+
+class IdentificationResult(BaseModel):
+    confidence_score: float = Field(ge=0, le=1)
+    identified_items: List[LegoItem]
+    description: str
+    condition_assessment: str
+
+
+class ValuationReport(BaseModel):
+    id: Optional[str] = None
+    image_filename: str
+    upload_timestamp: datetime
+    identification: IdentificationResult
+    valuation: ValuationResult
+    notes: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.now)
+
+
+class ImageUpload(BaseModel):
+    filename: str
+    content_type: str
+    size: int
