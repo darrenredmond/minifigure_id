@@ -28,9 +28,9 @@ class ImageProcessor:
         if not mime_type.startswith("image/"):
             raise ValueError(f"File type {mime_type} is not supported")
 
-        # Check file extension
+        # Check file extension (allow missing extension if MIME type is valid)
         file_ext = filename.lower().split(".")[-1] if "." in filename else ""
-        if file_ext not in settings.allowed_image_types:
+        if file_ext and file_ext not in settings.allowed_image_types:
             raise ValueError(f"File extension '{file_ext}' is not allowed")
 
         return True

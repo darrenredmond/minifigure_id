@@ -94,6 +94,15 @@ class BrickLinkClient:
             if response.status_code == 200:
                 data = response.json()
                 return data.get("data", [])
+            elif response.status_code == 401:
+                data = response.json()
+                meta = data.get("meta", {})
+                if "TOKEN_IP_MISMATCHED" in meta.get("description", ""):
+                    print(f"BrickLink API: IP address not whitelisted for these credentials")
+                    return []
+                else:
+                    print(f"BrickLink API authentication failed: {meta.get('message', 'Unknown error')}")
+                    return []
             else:
                 print(f"BrickLink API error: {response.status_code} - {response.text}")
                 return []
@@ -141,8 +150,17 @@ class BrickLinkClient:
                         price_data.get("times_sold", 0)
                     ),
                 )
+            elif response.status_code == 401:
+                data = response.json()
+                meta = data.get("meta", {})
+                if "TOKEN_IP_MISMATCHED" in meta.get("description", ""):
+                    print(f"BrickLink API: IP address not whitelisted for these credentials")
+                    return None
+                else:
+                    print(f"BrickLink API authentication failed: {meta.get('message', 'Unknown error')}")
+                    return None
             else:
-                print(f"BrickLink price guide error: {response.status_code}")
+                print(f"BrickLink price guide error: {response.status_code} - {response.text}")
                 return None
 
         except Exception as e:

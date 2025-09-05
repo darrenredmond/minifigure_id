@@ -64,9 +64,10 @@ class LegoIdentifier:
             image_base64 = self._encode_image(image_path)
             image_media_type = "image/jpeg"  # Assuming optimized images are JPEG
 
-            # Make API call to Claude
-            message = await self.client.messages.create(
-                model="claude-3-sonnet-20240229",
+            # Make API call to Claude (using Claude 4 Sonnet for superior accuracy)
+            # Note: The client.messages.create is not async in the anthropic package
+            message = self.client.messages.create(
+                model="claude-4-sonnet-20250514",
                 max_tokens=2000,
                 messages=[
                     {
@@ -104,13 +105,40 @@ class LegoIdentifier:
                 # Convert to our schema
                 identified_items = []
                 for item_data in result_data.get("identified_items", []):
+                    # Handle common variations in item_type
+                    item_type_raw = item_data.get("item_type", "minifigure").lower()
+                    item_type_mapping = {
+                        "minifigure": "minifigure",
+                        "minifig": "minifigure",
+                        "figure": "minifigure",
+                        "set": "set",
+                        "part": "part",
+                        "parts": "part",
+                        "piece": "part",
+                        "pieces": "part"
+                    }
+                    item_type = item_type_mapping.get(item_type_raw, "minifigure")
+
+                    # Handle common variations in condition
+                    condition_raw = item_data.get("condition", "used_complete").lower()
+                    condition_mapping = {
+                        "new": "new",
+                        "mint": "new",
+                        "used": "used_complete",
+                        "used_complete": "used_complete",
+                        "complete": "used_complete",
+                        "used_incomplete": "used_incomplete",
+                        "incomplete": "used_incomplete",
+                        "damaged": "damaged",
+                        "worn": "damaged"
+                    }
+                    condition = condition_mapping.get(condition_raw, "used_complete")
+
                     item = LegoItem(
                         item_number=item_data.get("item_number"),
                         name=item_data.get("name"),
-                        item_type=ItemType(item_data.get("item_type", "minifigure")),
-                        condition=ItemCondition(
-                            item_data.get("condition", "used_complete")
-                        ),
+                        item_type=ItemType(item_type),
+                        condition=ItemCondition(condition),
                         year_released=item_data.get("year_released"),
                         theme=item_data.get("theme"),
                         category=item_data.get("category"),
