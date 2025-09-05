@@ -53,22 +53,53 @@ def get_db_session() -> Generator[Session, None, None]:
 class DatabaseManager:
     """Database management class for common operations"""
 
-    def __init__(self):
-        self.engine = engine
+    def __init__(self, database_url: str = None):
+        if database_url:
+            # Create custom engine for testing
+            self.engine = create_engine(
+                database_url,
+                poolclass=StaticPool,
+                connect_args=(
+                    {"check_same_thread": False} if "sqlite" in database_url else {}
+                ),
+                echo=False,
+            )
+            self.Session = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
+        else:
+            # Use global engine
+            self.engine = engine
+            self.Session = SessionLocal
+
+    def init_db(self):
+        """Initialize database with tables"""
+        Base.metadata.create_all(bind=self.engine)
 
     def initialize_database(self):
-        """Initialize database with tables"""
-        create_tables()
+        """Initialize database with tables (alias for init_db)"""
+        self.init_db()
 
     def reset_database(self):
         """Drop and recreate all tables (use with caution!)"""
-        Base.metadata.drop_all(bind=engine)
-        Base.metadata.create_all(bind=engine)
+        Base.metadata.drop_all(bind=self.engine)
+        Base.metadata.create_all(bind=self.engine)
 
     def get_session(self) -> Session:
         """Get a new database session"""
-        return SessionLocal()
+        return self.Session()
+
+    @contextmanager
+    def get_session_context(self) -> Generator[Session, None, None]:
+        """Get a database session with context manager"""
+        session = self.Session()
+        try:
+            yield session
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
 
     def close_all_sessions(self):
         """Close all database connections"""
-        engine.dispose()
+        self.engine.dispose()

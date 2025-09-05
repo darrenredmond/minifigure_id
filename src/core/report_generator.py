@@ -1,557 +1,374 @@
 import os
-from typing import List, Optional
+import json
+import uuid
+from typing import List, Optional, Dict, Any
 from pathlib import Path
 from datetime import datetime
-from reportlab.lib.pagesizes import letter
-from reportlab.lib import colors
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.platypus import (
-    SimpleDocTemplate,
-    Paragraph,
-    Spacer,
-    Table,
-    TableStyle,
-    Image,
-)
-from reportlab.lib.units import inch
-from jinja2 import Environment, FileSystemLoader
-import json
+import tempfile
 
-from src.models.schemas import ValuationReport, ValuationResult, IdentificationResult
-from config.settings import settings
+try:
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib import colors
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    from reportlab.lib.units import inch
+    from reportlab.pdfgen import canvas
+    REPORTLAB_AVAILABLE = True
+except ImportError:
+    REPORTLAB_AVAILABLE = False
+
+try:
+    from PIL import Image
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
+
+from src.models.schemas import ValuationReport, RecommendationCategory, LegoItem
 
 
 class ReportGenerator:
-    def __init__(self, reports_dir: str = "data/reports"):
-        self.reports_dir = Path(reports_dir)
-        self.reports_dir.mkdir(parents=True, exist_ok=True)
+    """Generate reports in various formats (JSON, HTML, PDF, Markdown)"""
+    
+    def __init__(self, output_dir: str = None):
+        if output_dir:
+            self.output_dir = Path(output_dir)
+        else:
+            self.output_dir = Path("data/reports")
+        
+        self.output_dir.mkdir(parents=True, exist_ok=True)
 
-        # Setup Jinja2 templates
-        self.template_env = Environment(
-            loader=FileSystemLoader(str(Path(__file__).parent / "templates"))
-        )
-
-    def generate_pdf_report(self, report: ValuationReport) -> str:
-        """Generate a PDF valuation report"""
-        # Create filename
+    def generate_json(self, report: ValuationReport) -> str:
+        """Generate JSON report"""
+        # Create unique filename
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        pdf_filename = f"valuation_report_{timestamp}.pdf"
-        pdf_path = self.reports_dir / pdf_filename
+        unique_id = str(uuid.uuid4())[:8]
+        filename = f"valuation_report_{timestamp}_{unique_id}.json"
+        file_path = self.output_dir / filename
 
-        # Create PDF document
-        doc = SimpleDocTemplate(str(pdf_path), pagesize=letter)
-        styles = getSampleStyleSheet()
-
-        # Custom styles
-        title_style = ParagraphStyle(
-            "CustomTitle",
-            parent=styles["Heading1"],
-            fontSize=18,
-            spaceAfter=30,
-            textColor=colors.darkblue,
-        )
-
-        heading_style = ParagraphStyle(
-            "CustomHeading",
-            parent=styles["Heading2"],
-            fontSize=14,
-            spaceBefore=20,
-            spaceAfter=10,
-            textColor=colors.darkred,
-        )
-
-        # Build document content
-        content = []
-
-        # Title
-        content.append(Paragraph("LEGO Valuation Report", title_style))
-        content.append(Paragraph(f"Redmond's Forge Antique Shop", styles["Normal"]))
-        content.append(Spacer(1, 20))
-
-        # Report metadata
-        content.append(Paragraph("Report Information", heading_style))
-        metadata_data = [
-            ["Report Date:", report.created_at.strftime("%Y-%m-%d %H:%M")],
-            ["Image File:", report.image_filename],
-            ["Upload Date:", report.upload_timestamp.strftime("%Y-%m-%d %H:%M")],
-        ]
-        metadata_table = Table(metadata_data, colWidths=[2 * inch, 4 * inch])
-        metadata_table.setStyle(
-            TableStyle(
-                [
-                    ("ALIGN", (0, 0), (-1, -1), "LEFT"),
-                    ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
-                    ("FONTSIZE", (0, 0), (-1, -1), 10),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
-                ]
-            )
-        )
-        content.append(metadata_table)
-        content.append(Spacer(1, 20))
-
-        # Identification results
-        content.append(Paragraph("Item Identification", heading_style))
-        content.append(
-            Paragraph(
-                f"<b>Confidence Score:</b> {report.identification.confidence_score:.2%}",
-                styles["Normal"],
-            )
-        )
-        content.append(
-            Paragraph(
-                f"<b>Description:</b> {report.identification.description}",
-                styles["Normal"],
-            )
-        )
-        content.append(
-            Paragraph(
-                f"<b>Condition Assessment:</b> {report.identification.condition_assessment}",
-                styles["Normal"],
-            )
-        )
-        content.append(Spacer(1, 10))
-
-        # Identified items table
-        if report.identification.identified_items:
-            content.append(
-                Paragraph(
-                    "Identified Items",
-                    ParagraphStyle("SubHeading", parent=styles["Heading3"]),
-                )
-            )
-
-            items_data = [["Item Number", "Name", "Type", "Condition", "Year", "Theme"]]
-            for item in report.identification.identified_items:
-                items_data.append(
-                    [
-                        item.item_number or "N/A",
-                        item.name or "Unknown",
-                        item.item_type.value,
-                        item.condition.value,
-                        str(item.year_released) if item.year_released else "N/A",
-                        item.theme or "N/A",
-                    ]
-                )
-
-            items_table = Table(
-                items_data,
-                colWidths=[
-                    1 * inch,
-                    2 * inch,
-                    0.8 * inch,
-                    1 * inch,
-                    0.7 * inch,
-                    1.5 * inch,
-                ],
-            )
-            items_table.setStyle(
-                TableStyle(
-                    [
-                        ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
-                        ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-                        ("ALIGN", (0, 0), (-1, -1), "LEFT"),
-                        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                        ("FONTSIZE", (0, 0), (-1, -1), 9),
-                        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-                        ("GRID", (0, 0), (-1, -1), 1, colors.black),
-                    ]
-                )
-            )
-            content.append(items_table)
-            content.append(Spacer(1, 20))
-
-        # Valuation results
-        content.append(Paragraph("Valuation Assessment", heading_style))
-
-        valuation_data = [
-            ["Estimated Value:", f"${report.valuation.estimated_value:.2f}"],
-            ["Confidence Score:", f"{report.valuation.confidence_score:.2%}"],
-            ["Recommendation:", report.valuation.recommendation.value.title()],
-            [
-                "Suggested Platforms:",
-                ", ".join(
-                    [
-                        p.value.replace("_", " ").title()
-                        for p in report.valuation.suggested_platforms
-                    ]
-                ),
+        # Prepare data
+        data = {
+            "report_id": unique_id,
+            "timestamp": report.upload_timestamp.isoformat() if report.upload_timestamp else datetime.now().isoformat(),
+            "image_filename": report.image_filename,
+            "estimated_value": report.valuation.estimated_value,
+            "confidence_score": report.valuation.confidence_score,
+            "recommendation": report.valuation.recommendation.value,
+            "reasoning": report.valuation.reasoning,
+            "suggested_platforms": [p.value for p in report.valuation.suggested_platforms],
+            "identification": {
+                "confidence_score": report.identification.confidence_score,
+                "description": report.identification.description,
+                "condition_assessment": report.identification.condition_assessment
+            },
+            "identified_items": [
+                {
+                    "item_number": item.item_number,
+                    "name": item.name,
+                    "item_type": item.item_type.value if item.item_type else None,
+                    "condition": item.condition.value if item.condition else None,
+                    "year_released": item.year_released,
+                    "theme": item.theme,
+                    "category": item.category,
+                    "pieces": item.pieces
+                }
+                for item in report.identification.identified_items
             ],
-        ]
-
-        valuation_table = Table(valuation_data, colWidths=[2 * inch, 4 * inch])
-        valuation_table.setStyle(
-            TableStyle(
-                [
-                    ("ALIGN", (0, 0), (-1, -1), "LEFT"),
-                    ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
-                    ("FONTSIZE", (0, 0), (-1, -1), 11),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
-                    ("GRID", (0, 0), (-1, -1), 1, colors.grey),
-                ]
-            )
-        )
-        content.append(valuation_table)
-        content.append(Spacer(1, 15))
-
-        # Market data if available
-        if report.valuation.market_data and report.valuation.market_data.current_price:
-            content.append(Paragraph("Market Data", heading_style))
-            market_data = report.valuation.market_data
-            market_info = [
-                [
-                    "Current Market Price:",
-                    (
-                        f"${market_data.current_price:.2f}"
-                        if market_data.current_price
-                        else "N/A"
-                    ),
-                ],
-                [
-                    "Times Sold:",
-                    str(market_data.times_sold) if market_data.times_sold else "N/A",
-                ],
-                [
-                    "Availability:",
-                    (
-                        market_data.availability.replace("_", " ").title()
-                        if market_data.availability
-                        else "N/A"
-                    ),
-                ],
-                [
-                    "Price Trend:",
-                    (
-                        market_data.price_trend.title()
-                        if market_data.price_trend
-                        else "N/A"
-                    ),
-                ],
-            ]
-
-            market_table = Table(market_info, colWidths=[2 * inch, 4 * inch])
-            market_table.setStyle(
-                TableStyle(
-                    [
-                        ("ALIGN", (0, 0), (-1, -1), "LEFT"),
-                        ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
-                        ("FONTSIZE", (0, 0), (-1, -1), 10),
-                        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
-                    ]
-                )
-            )
-            content.append(market_table)
-            content.append(Spacer(1, 15))
-
-        # Reasoning
-        content.append(Paragraph("Valuation Reasoning", heading_style))
-        content.append(Paragraph(report.valuation.reasoning, styles["Normal"]))
-        content.append(Spacer(1, 15))
-
-        # Notes if any
-        if report.notes:
-            content.append(Paragraph("Additional Notes", heading_style))
-            content.append(Paragraph(report.notes, styles["Normal"]))
-            content.append(Spacer(1, 15))
-
-        # Footer
-        content.append(Spacer(1, 30))
-        footer_style = ParagraphStyle(
-            "Footer",
-            parent=styles["Normal"],
-            fontSize=8,
-            textColor=colors.grey,
-            alignment=1,  # Center alignment
-        )
-        content.append(
-            Paragraph(
-                "This report was generated using AI-assisted valuation. Please verify with additional sources for critical decisions.",
-                footer_style,
-            )
-        )
-        content.append(
-            Paragraph(
-                f"Generated by Redmond's Forge Valuation System on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-                footer_style,
-            )
-        )
-
-        # Build PDF
-        doc.build(content)
-
-        return str(pdf_path)
-
-    def generate_html_report(self, report: ValuationReport) -> str:
-        """Generate an HTML valuation report"""
-        # Create filename
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        html_filename = f"valuation_report_{timestamp}.html"
-        html_path = self.reports_dir / html_filename
-
-        # Prepare template data
-        template_data = {
-            "report": report,
-            "generated_at": datetime.now(),
-            "estimated_value_formatted": f"${report.valuation.estimated_value:.2f}",
-            "confidence_percentage": f"{report.valuation.confidence_score:.1%}",
-            "identification_confidence": f"{report.identification.confidence_score:.1%}",
+            "market_data": report.valuation.market_data.model_dump() if report.valuation.market_data else None
         }
 
-        # Load and render template
-        try:
-            template = self.template_env.get_template("valuation_report.html")
-            html_content = template.render(template_data)
-        except Exception:
-            # Fallback to basic HTML if template not found
-            html_content = self._generate_basic_html(report)
+        # Write JSON file
+        with open(file_path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+
+        return str(file_path)
+
+    def generate_html(self, report: ValuationReport) -> str:
+        """Generate HTML report"""
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        unique_id = str(uuid.uuid4())[:8]
+        filename = f"valuation_report_{timestamp}_{unique_id}.html"
+        file_path = self.output_dir / filename
+
+        # Generate HTML content
+        html_content = self._generate_html_content(report)
 
         # Write HTML file
-        with open(html_path, "w", encoding="utf-8") as f:
+        with open(file_path, 'w', encoding='utf-8') as f:
             f.write(html_content)
 
-        return str(html_path)
+        return str(file_path)
 
-    def _generate_basic_html(self, report: ValuationReport) -> str:
-        """Generate basic HTML report when template is not available"""
-        return f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>LEGO Valuation Report</title>
-            <style>
-                body {{ font-family: Arial, sans-serif; margin: 40px; }}
-                .header {{ color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; }}
-                .section {{ margin: 20px 0; }}
-                .value {{ color: #27ae60; font-weight: bold; font-size: 1.2em; }}
-                table {{ border-collapse: collapse; width: 100%; }}
-                th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
-                th {{ background-color: #f2f2f2; }}
-                .recommendation {{ padding: 10px; border-left: 4px solid #3498db; background-color: #ecf0f1; }}
-            </style>
-        </head>
-        <body>
-            <div class="header">
-                <h1>LEGO Valuation Report</h1>
-                <p>Redmond's Forge Antique Shop</p>
-                <p>Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
-            </div>
-            
-            <div class="section">
-                <h2>Item Information</h2>
-                <p><strong>Image:</strong> {report.image_filename}</p>
-                <p><strong>Upload Date:</strong> {report.upload_timestamp.strftime('%Y-%m-%d %H:%M')}</p>
-            </div>
-            
-            <div class="section">
-                <h2>Identification Results</h2>
-                <p><strong>Confidence:</strong> {report.identification.confidence_score:.2%}</p>
-                <p><strong>Description:</strong> {report.identification.description}</p>
-                <p><strong>Condition:</strong> {report.identification.condition_assessment}</p>
-            </div>
-            
-            <div class="section">
-                <h2>Valuation</h2>
-                <p class="value">Estimated Value: ${report.valuation.estimated_value:.2f}</p>
-                <p><strong>Confidence:</strong> {report.valuation.confidence_score:.2%}</p>
-                <div class="recommendation">
-                    <strong>Recommendation:</strong> {report.valuation.recommendation.value.title()}
-                </div>
-                <p><strong>Reasoning:</strong> {report.valuation.reasoning}</p>
-            </div>
-            
-            <div class="section">
-                <h2>Suggested Platforms</h2>
-                <ul>
-                    {''.join([f"<li>{p.value.replace('_', ' ').title()}</li>" for p in report.valuation.suggested_platforms])}
-                </ul>
-            </div>
-        </body>
-        </html>
-        """
+    def generate_pdf(self, report: ValuationReport) -> str:
+        """Generate PDF report"""
+        if not REPORTLAB_AVAILABLE:
+            raise ImportError("ReportLab is required for PDF generation. Install with: pip install reportlab")
 
-    def generate_json_export(self, reports: List[ValuationReport]) -> str:
-        """Generate JSON export of multiple reports"""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        json_filename = f"valuation_export_{timestamp}.json"
-        json_path = self.reports_dir / json_filename
+        unique_id = str(uuid.uuid4())[:8]
+        filename = f"valuation_report_{timestamp}_{unique_id}.pdf"
+        file_path = self.output_dir / filename
 
-        # Convert reports to dict format
-        export_data = {
-            "exported_at": datetime.now().isoformat(),
-            "total_reports": len(reports),
-            "reports": [report.dict() for report in reports],
-        }
-
-        with open(json_path, "w", encoding="utf-8") as f:
-            json.dump(export_data, f, indent=2, default=str)
-
-        return str(json_path)
-
-    def create_inventory_summary(
-        self, inventory_items: List, output_format: str = "pdf"
-    ) -> str:
-        """Create inventory summary report"""
-        if output_format.lower() == "pdf":
-            return self._create_inventory_pdf(inventory_items)
-        else:
-            return self._create_inventory_html(inventory_items)
-
-    def _create_inventory_pdf(self, inventory_items: List) -> str:
-        """Create PDF inventory summary"""
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        pdf_filename = f"inventory_summary_{timestamp}.pdf"
-        pdf_path = self.reports_dir / pdf_filename
-
-        doc = SimpleDocTemplate(str(pdf_path), pagesize=letter)
-        styles = getSampleStyleSheet()
-        content = []
+        # Create PDF using canvas (simpler approach)
+        c = canvas.Canvas(str(file_path), pagesize=letter)
+        width, height = letter
 
         # Title
-        title_style = ParagraphStyle(
-            "CustomTitle", parent=styles["Heading1"], fontSize=16
-        )
-        content.append(Paragraph("Inventory Summary Report", title_style))
-        content.append(
-            Paragraph(
-                f"Redmond's Forge - {datetime.now().strftime('%Y-%m-%d')}",
-                styles["Normal"],
-            )
-        )
-        content.append(Spacer(1, 30))
+        c.setFont("Helvetica-Bold", 20)
+        c.drawString(50, height - 50, "LEGO Valuation Report")
+        
+        # Basic info
+        c.setFont("Helvetica", 12)
+        y_pos = height - 100
+        
+        c.drawString(50, y_pos, f"Date: {report.upload_timestamp.strftime('%Y-%m-%d %H:%M') if report.upload_timestamp else datetime.now().strftime('%Y-%m-%d %H:%M')}")
+        y_pos -= 20
+        
+        c.drawString(50, y_pos, f"Estimated Value: {self._format_currency(report.valuation.estimated_value)}")
+        y_pos -= 20
+        
+        c.drawString(50, y_pos, f"Confidence: {self._format_percentage(report.valuation.confidence_score)}")
+        y_pos -= 20
+        
+        c.drawString(50, y_pos, f"Recommendation: {report.valuation.recommendation.value.title()}")
+        y_pos -= 40
+        
+        # Items
+        if report.identification.identified_items:
+            c.setFont("Helvetica-Bold", 14)
+            c.drawString(50, y_pos, "Identified Items:")
+            y_pos -= 20
+            
+            c.setFont("Helvetica", 10)
+            for item in report.identification.identified_items:
+                item_text = f"• {item.name or 'Unknown'}"
+                if item.item_number:
+                    item_text += f" ({item.item_number})"
+                if item.theme:
+                    item_text += f" - {item.theme}"
+                
+                c.drawString(60, y_pos, item_text)
+                y_pos -= 15
+                
+                if y_pos < 100:  # New page if needed
+                    c.showPage()
+                    y_pos = height - 50
 
-        # Summary statistics
-        total_items = len(inventory_items)
-        total_value = sum(item.estimated_value or 0 for item in inventory_items)
+        # Include image if available and PIL is installed
+        # Note: since we only have filename, we'd need full path to include image
+        # For now, just skip image inclusion
+        pass
 
-        content.append(Paragraph("Summary Statistics", styles["Heading2"]))
-        summary_data = [
-            ["Total Items:", str(total_items)],
-            ["Total Estimated Value:", f"${total_value:.2f}"],
-            [
-                "Average Value:",
-                f"${total_value/total_items:.2f}" if total_items > 0 else "$0.00",
-            ],
-        ]
+        c.save()
+        return str(file_path)
 
-        summary_table = Table(summary_data, colWidths=[2 * inch, 2 * inch])
-        summary_table.setStyle(
-            TableStyle(
-                [
-                    ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
-                    ("FONTSIZE", (0, 0), (-1, -1), 10),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
-                ]
-            )
-        )
-        content.append(summary_table)
-        content.append(Spacer(1, 20))
-
-        # Items table (first 20 items)
-        if inventory_items:
-            content.append(Paragraph("Top Items by Value", styles["Heading2"]))
-
-            items_data = [["Item", "Type", "Condition", "Est. Value", "Location"]]
-            for item in sorted(
-                inventory_items, key=lambda x: x.estimated_value or 0, reverse=True
-            )[:20]:
-                items_data.append(
-                    [
-                        item.item_name[:30] or "Unknown",
-                        item.item_type or "N/A",
-                        item.condition or "N/A",
-                        (
-                            f"${item.estimated_value:.2f}"
-                            if item.estimated_value
-                            else "N/A"
-                        ),
-                        item.location[:20] if item.location else "N/A",
-                    ]
-                )
-
-            items_table = Table(
-                items_data,
-                colWidths=[2 * inch, 1 * inch, 1 * inch, 1 * inch, 1.5 * inch],
-            )
-            items_table.setStyle(
-                TableStyle(
-                    [
-                        ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
-                        ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-                        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                        ("FONTSIZE", (0, 0), (-1, -1), 8),
-                        ("GRID", (0, 0), (-1, -1), 1, colors.black),
-                    ]
-                )
-            )
-            content.append(items_table)
-
-        doc.build(content)
-        return str(pdf_path)
-
-    def _create_inventory_html(self, inventory_items: List) -> str:
-        """Create HTML inventory summary"""
+    def generate_markdown(self, report: ValuationReport) -> str:
+        """Generate Markdown report"""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        html_filename = f"inventory_summary_{timestamp}.html"
-        html_path = self.reports_dir / html_filename
+        unique_id = str(uuid.uuid4())[:8]
+        filename = f"valuation_report_{timestamp}_{unique_id}.md"
+        file_path = self.output_dir / filename
 
-        total_value = sum(item.estimated_value or 0 for item in inventory_items)
+        # Generate Markdown content
+        md_content = self._generate_markdown_content(report)
 
-        html_content = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>Inventory Summary</title>
-            <style>
-                body {{ font-family: Arial, sans-serif; margin: 20px; }}
-                table {{ border-collapse: collapse; width: 100%; }}
-                th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
-                th {{ background-color: #f2f2f2; }}
-                .summary {{ background-color: #e8f4fd; padding: 20px; margin: 20px 0; }}
-            </style>
-        </head>
-        <body>
-            <h1>Inventory Summary</h1>
-            <p>Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+        # Write Markdown file
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(md_content)
+
+        return str(file_path)
+
+    def generate_all_formats(self, report: ValuationReport) -> Dict[str, str]:
+        """Generate reports in all available formats"""
+        results = {}
+        
+        results['json'] = self.generate_json(report)
+        results['html'] = self.generate_html(report)
+        results['markdown'] = self.generate_markdown(report)
+        
+        try:
+            results['pdf'] = self.generate_pdf(report)
+        except ImportError as e:
+            results['pdf_error'] = str(e)
+        
+        return results
+
+    def _format_currency(self, amount: float) -> str:
+        """Format currency value"""
+        return f"${amount:,.2f}"
+
+    def _format_percentage(self, value: float) -> str:
+        """Format percentage value"""
+        return f"{value * 100:.1f}%"
+
+    def _get_recommendation_color(self, recommendation: RecommendationCategory) -> str:
+        """Get color for recommendation category"""
+        color_map = {
+            RecommendationCategory.MUSEUM: "#FFD700",  # Gold
+            RecommendationCategory.RESALE: "#00FF00",   # Green
+            RecommendationCategory.COLLECTION: "#87CEEB" # Sky Blue
+        }
+        return color_map.get(recommendation, "#CCCCCC")
+
+    def _generate_summary_statistics(self, items: List[LegoItem]) -> Dict[str, int]:
+        """Generate summary statistics for items"""
+        stats = {
+            "total_items": len(items),
+            "minifigures": 0,
+            "sets": 0,
+            "parts": 0,
+            "new_items": 0,
+            "used_items": 0
+        }
+        
+        for item in items:
+            # Count by type
+            if item.item_type and "minifigure" in item.item_type.value.lower():
+                stats["minifigures"] += 1
+            elif item.item_type and "set" in item.item_type.value.lower():
+                stats["sets"] += 1
+            else:
+                stats["parts"] += 1
             
-            <div class="summary">
-                <h2>Summary Statistics</h2>
-                <p><strong>Total Items:</strong> {len(inventory_items)}</p>
-                <p><strong>Total Estimated Value:</strong> ${total_value:.2f}</p>
-                <p><strong>Average Value:</strong> ${total_value/len(inventory_items):.2f if inventory_items else 0}</p>
-            </div>
+            # Count by condition
+            if item.condition and "new" in item.condition.value.lower():
+                stats["new_items"] += 1
+            else:
+                stats["used_items"] += 1
+        
+        return stats
+
+    def _generate_html_content(self, report: ValuationReport) -> str:
+        """Generate HTML content for report"""
+        recommendation_color = self._get_recommendation_color(report.valuation.recommendation)
+        
+        html = f'''<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LEGO Valuation Report</title>
+    <style>
+        body {{ font-family: Arial, sans-serif; margin: 20px; line-height: 1.6; }}
+        .header {{ background-color: #f4f4f4; padding: 20px; border-radius: 5px; }}
+        .recommendation {{ background-color: {recommendation_color}; color: #333; padding: 10px; border-radius: 5px; }}
+        .item {{ border: 1px solid #ddd; padding: 10px; margin: 10px 0; border-radius: 5px; }}
+        .value {{ font-size: 2em; color: #2c5aa0; font-weight: bold; }}
+        table {{ border-collapse: collapse; width: 100%; }}
+        th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+        th {{ background-color: #f2f2f2; }}
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>LEGO Valuation Report</h1>
+        <p><strong>Date:</strong> {report.upload_timestamp.strftime('%Y-%m-%d %H:%M') if report.upload_timestamp else datetime.now().strftime('%Y-%m-%d %H:%M')}</p>
+    </div>
+
+    <h2>Valuation Summary</h2>
+    <div class="value">{self._format_currency(report.valuation.estimated_value)}</div>
+    <p><strong>Confidence:</strong> {self._format_percentage(report.valuation.confidence_score)}</p>
+    <div class="recommendation">
+        <strong>Recommendation:</strong> {report.valuation.recommendation.value.title()}
+    </div>
+    <p><strong>Reasoning:</strong> {report.valuation.reasoning}</p>
+
+    <h2>Identification Results</h2>
+    <p><strong>Confidence:</strong> {self._format_percentage(report.identification.confidence_score)}</p>
+    <p><strong>Description:</strong> {report.identification.description}</p>
+    <p><strong>Condition Assessment:</strong> {report.identification.condition_assessment}</p>
+
+    <h2>Identified Items ({len(report.identification.identified_items)})</h2>
+'''
+        
+        if report.identification.identified_items:
+            html += '<table><tr><th>Name</th><th>Type</th><th>Condition</th><th>Theme</th><th>Year</th><th>Pieces</th></tr>'
+            for item in report.identification.identified_items:
+                html += f'''<tr>
+                    <td>{item.name or 'Unknown'}</td>
+                    <td>{item.item_type.value if item.item_type else 'N/A'}</td>
+                    <td>{item.condition.value if item.condition else 'N/A'}</td>
+                    <td>{item.theme or 'N/A'}</td>
+                    <td>{item.year_released or 'N/A'}</td>
+                    <td>{item.pieces or 'N/A'}</td>
+                </tr>'''
+            html += '</table>'
+        else:
+            html += '<p>No items identified</p>'
+
+        # Market data section
+        if report.valuation.market_data:
+            market_data = report.valuation.market_data
+            html += f'''
+    <h2>Market Data</h2>
+    <p><strong>Current Market Price:</strong> {self._format_currency(market_data.current_price) if market_data.current_price else 'N/A'}</p>
+    <p><strong>Average 6M Price:</strong> {self._format_currency(market_data.avg_price_6m) if market_data.avg_price_6m else 'N/A'}</p>
+    <p><strong>Times Sold:</strong> {market_data.times_sold if market_data.times_sold else 'N/A'} times</p>
+    <p><strong>Availability:</strong> {market_data.availability or 'N/A'}</p>
+'''
+        else:
+            html += '<h2>Market Data</h2><p>Market data not available</p>'
+
+        # Suggested platforms
+        if report.valuation.suggested_platforms:
+            html += '<h2>Suggested Selling Platforms</h2><ul>'
+            for platform in report.valuation.suggested_platforms:
+                html += f'<li>{platform.value.replace("_", " ").title()}</li>'
+            html += '</ul>'
+
+        html += '</body></html>'
+        return html
+
+    def _generate_markdown_content(self, report: ValuationReport) -> str:
+        """Generate Markdown content for report"""
+        md = f'''# LEGO Valuation Report
+
+**Date:** {report.upload_timestamp.strftime('%Y-%m-%d %H:%M') if report.upload_timestamp else datetime.now().strftime('%Y-%m-%d %H:%M')}
+
+## Valuation Summary
+
+**Estimated Value:** **{self._format_currency(report.valuation.estimated_value)}**
+
+- **Confidence:** {self._format_percentage(report.valuation.confidence_score)}
+- **Recommendation:** {report.valuation.recommendation.value.title()}
+- **Reasoning:** {report.valuation.reasoning}
+
+## Identification Results
+
+- **Confidence:** {self._format_percentage(report.identification.confidence_score)}
+- **Description:** {report.identification.description}
+- **Condition Assessment:** {report.identification.condition_assessment}
+
+## Identified Items ({len(report.identification.identified_items)})
+
+'''
+        
+        if report.identification.identified_items:
+            md += '| Name | Type | Condition | Theme | Year | Pieces |\n'
+            md += '|------|------|-----------|-------|------|--------|\n'
             
-            <h2>Inventory Items</h2>
-            <table>
-                <tr>
-                    <th>Item Name</th>
-                    <th>Type</th>
-                    <th>Condition</th>
-                    <th>Estimated Value</th>
-                    <th>Location</th>
-                    <th>Status</th>
-                </tr>
-        """
+            for item in report.identification.identified_items:
+                md += f'| {item.name or "Unknown"} | {item.item_type.value if item.item_type else "N/A"} | {item.condition.value if item.condition else "N/A"} | {item.theme or "N/A"} | {item.year_released or "N/A"} | {item.pieces or "N/A"} |\n'
+        else:
+            md += 'No items identified.\n'
 
-        for item in sorted(
-            inventory_items, key=lambda x: x.estimated_value or 0, reverse=True
-        ):
-            html_content += f"""
-                <tr>
-                    <td>{item.item_name or 'Unknown'}</td>
-                    <td>{item.item_type or 'N/A'}</td>
-                    <td>{item.condition or 'N/A'}</td>
-                    <td>${item.estimated_value:.2f if item.estimated_value else 0}</td>
-                    <td>{item.location or 'N/A'}</td>
-                    <td>{item.status or 'N/A'}</td>
-                </tr>
-            """
+        # Market data
+        if report.valuation.market_data:
+            market_data = report.valuation.market_data
+            md += f'''
+## Market Data
 
-        html_content += """
-            </table>
-        </body>
-        </html>
-        """
+- **Current Market Price:** {self._format_currency(market_data.current_price) if market_data.current_price else 'N/A'}
+- **Average 6M Price:** {self._format_currency(market_data.avg_price_6m) if market_data.avg_price_6m else 'N/A'}
+- **Times Sold:** {market_data.times_sold if market_data.times_sold else 'N/A'} times
+- **Availability:** {market_data.availability or 'N/A'}
+'''
+        else:
+            md += '\n## Market Data\n\nMarket data not available.\n'
 
-        with open(html_path, "w", encoding="utf-8") as f:
-            f.write(html_content)
+        # Suggested platforms
+        if report.valuation.suggested_platforms:
+            md += '\n## Suggested Selling Platforms\n\n'
+            for platform in report.valuation.suggested_platforms:
+                md += f'- {platform.value.replace("_", " ").title()}\n'
 
-        return str(html_path)
+        return md

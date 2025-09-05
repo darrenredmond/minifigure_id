@@ -151,6 +151,7 @@ class TestBrickLinkClient:
         mock_response = Mock()
         mock_response.status_code = 500
         mock_response.text = "Internal Server Error"
+        mock_response.json.return_value = {"meta": {"code": 500}}  # Mock the JSON response
         mock_get.return_value = mock_response
         
         with patch('builtins.print') as mock_print:
