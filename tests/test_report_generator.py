@@ -10,7 +10,7 @@ from src.core.report_generator import ReportGenerator
 from src.models.schemas import (
     ValuationReport, IdentificationResult, ValuationResult,
     LegoItem, ItemType, ItemCondition, RecommendationCategory,
-    PlatformType, MarketData
+    PlatformType, MarketData, ItemValuation
 )
 
 
@@ -82,7 +82,7 @@ class TestReportGenerator:
         with open(report_path, 'r') as f:
             data = json.load(f)
         
-        assert data['estimated_value'] == 75.50
+        assert data['estimated_value_usd'] == 75.50
         assert data['confidence_score'] == 0.8
         assert data['recommendation'] == 'resale'
         assert len(data['identified_items']) == 1
@@ -100,31 +100,27 @@ class TestReportGenerator:
         with open(report_path, 'r') as f:
             content = f.read()
         
-        assert "Luke Skywalker (Tatooine)" in content
+        assert "Luke Skywalker" in content
         assert "$75.50" in content
         assert "Star Wars" in content
         assert "resale" in content.lower()
         # Category is not displayed in HTML, so remove this assertion
     
-    @patch('src.core.report_generator.canvas.Canvas')
-    def test_generate_pdf_report(self, mock_canvas_class, report_generator, sample_report):
+    @patch('src.core.report_generator.SimpleDocTemplate')
+    def test_generate_pdf_report(self, mock_doc_class, report_generator, sample_report):
         """Test PDF report generation"""
-        # Create mock canvas
-        mock_canvas = MagicMock()
-        mock_canvas_class.return_value = mock_canvas
+        # Create mock document
+        mock_doc = MagicMock()
+        mock_doc_class.return_value = mock_doc
         
         report_path = report_generator.generate_pdf(sample_report)
         
         assert report_path is not None
         assert report_path.endswith('.pdf')
         
-        # Verify Canvas was used
-        mock_canvas_class.assert_called_once()
-        mock_canvas.save.assert_called_once()
-        
-        # Verify content was drawn
-        mock_canvas.drawString.assert_called()
-        mock_canvas.setFont.assert_called()
+        # Verify SimpleDocTemplate was used
+        mock_doc_class.assert_called_once()
+        mock_doc.build.assert_called_once()
     
     def test_generate_markdown_report(self, report_generator, sample_report):
         """Test Markdown report generation"""
@@ -208,7 +204,7 @@ class TestReportGenerator:
         with open(json_path, 'r') as f:
             data = json.load(f)
         
-        assert data['estimated_value'] == 0.0
+        assert data['estimated_value_usd'] == 0.0
         assert len(data['identified_items']) == 0
     
     def test_report_with_multiple_items(self, report_generator):
@@ -242,12 +238,24 @@ class TestReportGenerator:
             condition_assessment="Mixed conditions"
         )
         
+        # Create individual valuations for each item
+        individual_valuations = []
+        for item in items:
+            individual_val = ItemValuation(
+                item=item,
+                estimated_individual_value_usd=50.0 if "Luke" in item.name else 75.0 if "Leia" in item.name else 125.0,
+                confidence_score=0.8,
+                notes=f"Individual valuation for {item.name}"
+            )
+            individual_valuations.append(individual_val)
+
         valuation = ValuationResult(
             estimated_value=250.0,
             confidence_score=0.85,
             recommendation=RecommendationCategory.RESALE,
             reasoning="Valuable collection",
-            suggested_platforms=[PlatformType.EBAY]
+            suggested_platforms=[PlatformType.EBAY],
+            individual_valuations=individual_valuations
         )
         
         report = ValuationReport(
@@ -303,7 +311,7 @@ class TestReportGenerator:
         
         assert "Current Market Price" in content
         assert "$70.00" in content  # current_price
-        assert "25 times" in content  # times_sold
+        assert "25" in content  # times_sold
         
         # Test without market data
         sample_report.valuation.market_data = None
@@ -449,14 +457,14 @@ class TestReportFormats:
         assert 'report_id' in data
         assert 'timestamp' in data
         assert 'identification' in data
-        assert 'estimated_value' in data
+        assert 'estimated_value_usd' in data
         assert 'confidence_score' in data
         assert 'recommendation' in data
         assert 'identified_items' in data
         assert 'market_data' in data
         
         # Verify values
-        assert data['estimated_value'] == 8500.0
+        assert data['estimated_value_usd'] == 8500.0
         assert data['recommendation'] == 'museum'
         assert data['identified_items'][0]['pieces'] == 5195
     

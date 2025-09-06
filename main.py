@@ -79,6 +79,7 @@ class LegoValuationCLI:
             # Create report
             report = ValuationReport(
                 image_filename=image_upload.filename,
+                image_path=optimized_path,  # Include the path to the processed image
                 upload_timestamp=datetime.now(),
                 identification=identification,
                 valuation=valuation,

@@ -42,27 +42,49 @@ class LegoIdentifier:
         - Set completeness (all parts present)
         - Condition details that affect value
         - Authentication (genuine LEGO vs third-party)
+        - Accurate theme identification (City, Creator, Friends, Ninjago, Castle, Space, Pirates, etc.)
+
+        DO NOT assume themes - look carefully at actual visual details:
+        - City theme: Construction workers, police, firefighters, civilians
+        - Creator theme: Generic figures, animals, vehicles
+        - Friends theme: Mini-doll figures, pastel colors
+        - Ninjago theme: Ninja characters, Asian-inspired designs
+        - Castle/Kingdoms theme: Knights, medieval elements
+        - Space theme: Astronauts, futuristic elements
+        - Pirates theme: Pirate characters, ships
+        - And many others - be accurate!
 
         Respond with a detailed analysis in JSON format matching this structure:
         {
-            "confidence_score": 0.85,
+            "confidence_score": 0.75,
             "identified_items": [
                 {
-                    "item_number": "sw0001a",
-                    "name": "Luke Skywalker (Tatooine)",
+                    "item_number": "cty0123",
+                    "name": "Construction Worker",
                     "item_type": "minifigure",
                     "condition": "used_complete",
-                    "year_released": 1999,
-                    "theme": "Star Wars",
-                    "category": "Episode IV",
+                    "year_released": 2018,
+                    "theme": "City",
+                    "category": "Construction",
+                    "pieces": null
+                },
+                {
+                    "item_number": null,
+                    "name": "Generic Female Civilian",
+                    "item_type": "minifigure",
+                    "condition": "used_complete",
+                    "year_released": null,
+                    "theme": "Creator/Generic",
+                    "category": null,
                     "pieces": null
                 }
             ],
-            "description": "Single LEGO Star Wars minifigure of Luke Skywalker from 1999...",
-            "condition_assessment": "Figure appears to be in good used condition with minor wear on printed torso..."
+            "description": "Collection of mixed LEGO minifigures from various themes...",
+            "condition_assessment": "Figures appear to be in good used condition..."
         }
         
-        Be thorough but honest about uncertainty. If you're not sure about specific details, indicate lower confidence or use null values."""
+        Be thorough but honest about uncertainty. If you're not sure about specific details, indicate lower confidence or use null values.
+        IMPORTANT: Only identify themes you can actually see evidence for - do not guess or assume popular themes!"""
 
     async def identify_lego_items(self, image_path: str) -> IdentificationResult:
         """Identify LEGO items in the provided image using Claude Vision with rate limiting"""

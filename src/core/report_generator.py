@@ -6,6 +6,8 @@ from pathlib import Path
 from datetime import datetime
 import tempfile
 
+from src.utils.minifigure_images import MinifigureImageService
+
 try:
     from reportlab.lib.pagesizes import letter, A4
     from reportlab.lib import colors
@@ -36,6 +38,9 @@ class ReportGenerator:
             self.output_dir = Path("data/reports")
         
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Initialize minifigure image service
+        self.image_service = MinifigureImageService()
 
     def generate_json(self, report: ValuationReport) -> str:
         """Generate comprehensive JSON report with detailed pricing"""
@@ -162,12 +167,43 @@ class ReportGenerator:
         # Include original image if available
         if report.image_path and os.path.exists(report.image_path):
             try:
-                # Resize image to fit nicely in report
+                # Add introduction heading
+                intro_style = ParagraphStyle(
+                    'IntroStyle',
+                    parent=styles['Heading2'],
+                    fontSize=16,
+                    spaceAfter=10,
+                    textColor=colors.HexColor('#2c5aa0'),
+                    alignment=1
+                )
+                story.append(Paragraph("Original Image", intro_style))
+                
+                # Resize image to fit nicely in report with better proportions
                 img = RLImage(report.image_path)
-                img.drawHeight = 3*inch
-                img.drawWidth = 4*inch
+                # Calculate aspect ratio to maintain proportions
+                try:
+                    from PIL import Image
+                    pil_img = Image.open(report.image_path)
+                    aspect_ratio = pil_img.width / pil_img.height
+                    
+                    # Set max dimensions
+                    max_width = 5*inch
+                    max_height = 3.5*inch
+                    
+                    if aspect_ratio > 1:  # Landscape
+                        img.drawWidth = max_width
+                        img.drawHeight = max_width / aspect_ratio
+                    else:  # Portrait or square
+                        img.drawHeight = max_height
+                        img.drawWidth = max_height * aspect_ratio
+                        
+                except ImportError:
+                    # Fallback if PIL not available
+                    img.drawHeight = 3*inch
+                    img.drawWidth = 4*inch
+                
                 story.append(img)
-                story.append(Spacer(1, 20))
+                story.append(Spacer(1, 30))
             except Exception as e:
                 print(f"Could not include image in PDF: {e}")
 
@@ -390,8 +426,12 @@ class ReportGenerator:
         .pricing-table {{ margin: 20px 0; }}
         .pricing-table th {{ background-color: #34495e; }}
         .item-section {{ background: #f8f9fa; padding: 20px; margin: 20px 0; border-radius: 8px; border-left: 4px solid #2c5aa0; }}
+        .introduction-section {{ margin: 30px 0; }}
         .original-image {{ text-align: center; margin: 20px 0; }}
-        .original-image img {{ max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.2); }}
+        .original-image h2 {{ color: #2c5aa0; margin-bottom: 20px; }}
+        .original-image img {{ max-width: 100%; max-height: 400px; height: auto; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.2); }}
+        .minifigure-image {{ text-align: center; margin: 15px 0; }}
+        .minifigure-image img {{ max-width: 150px; max-height: 150px; height: auto; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); border: 2px solid #e0e0e0; }}
         .metadata {{ background: #ecf0f1; padding: 15px; border-radius: 8px; margin: 20px 0; }}
         .exchange-rate {{ font-style: italic; color: #666; margin-top: 20px; text-align: center; }}
     </style>
@@ -402,7 +442,10 @@ class ReportGenerator:
             <h1>LEGO Valuation Report</h1>
             <p><strong>Date:</strong> {report.upload_timestamp.strftime('%Y-%m-%d %H:%M') if report.upload_timestamp else datetime.now().strftime('%Y-%m-%d %H:%M')}</p>
             <p><strong>Image:</strong> {report.image_filename}</p>
-        </div>'''
+        </div>
+
+        <!-- Introduction Section with Original Image -->
+        <div class="introduction-section">'''
 
         # Include original image if available
         if report.image_path and os.path.exists(report.image_path):
@@ -411,12 +454,15 @@ class ReportGenerator:
                 with open(report.image_path, 'rb') as img_file:
                     img_data = base64.b64encode(img_file.read()).decode('utf-8')
                     html += f'''
-        <div class="original-image">
-            <h2>Original Image</h2>
-            <img src="data:image/jpeg;base64,{img_data}" alt="Original LEGO Image" />
-        </div>'''
+            <div class="original-image">
+                <h2>Original Image</h2>
+                <img src="data:image/jpeg;base64,{img_data}" alt="Original LEGO Collection Image" />
+            </div>'''
             except Exception as e:
                 print(f"Could not include image in HTML: {e}")
+        
+        html += '''
+        </div>'''
 
         # Valuation summary with both currencies
         total_usd = self._format_currency(report.valuation.estimated_value)
@@ -446,9 +492,33 @@ class ReportGenerator:
             html += '<h2>Individual Item Valuations</h2>'
             
             for i, item_val in enumerate(report.valuation.individual_valuations):
+                # Get individual minifigure image
+                minifig_image = None
+                if item_val.item.item_number or item_val.item.name:
+                    minifig_image = self.image_service.get_minifigure_image(
+                        item_val.item.item_number, 
+                        item_val.item.name or "Unknown",
+                        item_val.item.theme or "Unknown"
+                    )
+                
                 html += f'''
         <div class="item-section">
-            <h3>Item {i+1}: {item_val.item.name or 'Unknown'}</h3>
+            <h3>Item {i+1}: {item_val.item.name or 'Unknown'}</h3>'''
+            
+                # Include individual minifigure image if available
+                if minifig_image and os.path.exists(minifig_image):
+                    try:
+                        import base64
+                        with open(minifig_image, 'rb') as img_file:
+                            img_data = base64.b64encode(img_file.read()).decode('utf-8')
+                            html += f'''
+            <div class="minifigure-image">
+                <img src="data:image/png;base64,{img_data}" alt="{item_val.item.name or 'Unknown'}" />
+            </div>'''
+                    except Exception as e:
+                        print(f"Could not include minifigure image in HTML: {e}")
+                
+                html += '''
             <table>
                 <tr><th>Property</th><th>Value</th></tr>
                 <tr><td>Item Number</td><td>{item_val.item.item_number or 'N/A'}</td></tr>
