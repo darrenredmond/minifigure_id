@@ -30,7 +30,6 @@ class TestDatabaseDrivenIdentifier:
         assert self.identifier.image_matcher is not None
         assert self.identifier.ai_identifier is not None
         assert self.identifier.db_builder is not None
-        assert self.identifier.mock_builder is not None
     
     @pytest.mark.asyncio
     async def test_identify_lego_items_success(self):
@@ -335,7 +334,6 @@ class TestEnhancedMainCLI:
         assert self.cli.image_matcher is not None
         assert self.cli.ai_identifier is not None
         assert self.cli.db_builder is not None
-        assert self.cli.mock_builder is not None
     
     def test_get_database_stats(self):
         """Test getting database statistics"""

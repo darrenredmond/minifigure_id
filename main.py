@@ -226,18 +226,23 @@ class EnhancedLegoValuationCLI:
             print("Image Files: 0 (directory not found)")
     
     def setup_database(self, count: int = 1000):
-        """Setup the minifigure database"""
-        print(f"🚀 Setting up minifigure database with {count} minifigures...")
+        """Setup the minifigure database with real BrickLink data only"""
+        print(f"🚀 Setting up minifigure database with {count} real minifigures from BrickLink...")
         print("This may take several minutes...")
         
         try:
-            from src.core.production_database_builder import ProductionDatabaseBuilder
-            builder = ProductionDatabaseBuilder()
-            total_count = asyncio.run(builder.build_production_database(count))
-            print(f"✅ Database setup complete: {total_count} minifigures")
+            from src.core.real_data_database_builder import RealDataDatabaseBuilder
+            builder = RealDataDatabaseBuilder()
+            total_count = asyncio.run(builder.build_real_data_database(count))
+            
+            if total_count > 0:
+                print(f"✅ Database setup complete: {total_count} real minifigures from BrickLink")
+            else:
+                print("❌ No minifigures could be downloaded from BrickLink API")
+                print("Please check your API credentials and network connection")
         except Exception as e:
             print(f"❌ Error setting up database: {e}")
-            print("Please run: python setup_production_database.py build --count 1000")
+            print("Please check your BrickLink API credentials in .env file")
 
 
 def main():

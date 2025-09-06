@@ -11,8 +11,7 @@ import logging
 from src.models.schemas import IdentificationResult, LegoItem, ItemType, ItemCondition
 from src.core.image_matcher import ImageMatcher, MatchResult
 from src.core.lego_identifier import LegoIdentifier
-from src.core.database_builder import MinifigureDatabaseBuilder
-from src.core.mock_database_builder import MockDatabaseBuilder
+from src.core.real_data_database_builder import RealDataDatabaseBuilder
 
 logger = logging.getLogger(__name__)
 
@@ -22,8 +21,7 @@ class DatabaseDrivenIdentifier:
     def __init__(self):
         self.image_matcher = ImageMatcher()
         self.ai_identifier = LegoIdentifier()
-        self.db_builder = MinifigureDatabaseBuilder()
-        self.mock_builder = MockDatabaseBuilder()
+        self.db_builder = RealDataDatabaseBuilder()
         
     async def identify_lego_items(self, image_path: str) -> IdentificationResult:
         """Identify LEGO items using database matching + AI analysis"""
@@ -193,36 +191,22 @@ class DatabaseDrivenIdentifier:
         return ai_condition
     
     def get_database_stats(self) -> Dict[str, Any]:
-        """Get database statistics"""
-        # Check both real and mock databases
+        """Get database statistics - only real BrickLink data"""
+        # Check only real database
         real_count = self.db_builder.get_minifigure_count()
-        mock_count = self.mock_builder.get_minifigure_count()
         
         return {
-            'total_minifigures': real_count + mock_count,
+            'total_minifigures': real_count,
             'real_database_count': real_count,
-            'mock_database_count': mock_count,
+            'mock_database_count': 0,  # No mock data
             'database_path': self.db_builder.db_path,
             'images_directory': str(self.db_builder.images_dir)
         }
     
     def search_database(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
-        """Search the minifigure database"""
-        # Search both real and mock databases
-        real_results = self.db_builder.search_minifigures(query, limit)
-        mock_results = self.mock_builder.search_minifigures(query, limit)
-        
-        # Combine and deduplicate
-        all_results = real_results + mock_results
-        seen = set()
-        unique_results = []
-        for result in all_results:
-            key = result['item_number']
-            if key not in seen:
-                seen.add(key)
-                unique_results.append(result)
-        
-        return unique_results[:limit]
+        """Search the minifigure database - only real BrickLink data"""
+        # Search only real database
+        return self.db_builder.search_minifigures(query, limit)
 
 # CLI interface for testing
 async def main():
