@@ -1,0 +1,31 @@
+{
+  "report": {
+    "id": null,
+    "image_filename": "img-20250905-101709_f74b181a.jpg",
+    "image_path": "data/uploads/optimized/opt_img-20250905-101709_f74b181a.jpg",
+    "upload_timestamp": "2025-09-06 13:17:12.856495",
+    "identification": {
+      "confidence_score": 0.0,
+      "identified_items": [],
+      "description": "Error during identification: Error code: 404 - {'type': 'error', 'error': {'type': 'not_found_error', 'message': 'model: claude-3-5-sonnet-20241022'}, 'request_id': 'req_011CSs8dbqGSxygjTK2rNXGp'}",
+      "condition_assessment": "Could not assess condition due to error"
+    },
+    "valuation": {
+      "estimated_value": 0.0,
+      "estimated_value_eur": 0.0,
+      "confidence_score": 0.1,
+      "recommendation": "collection",
+      "reasoning": "Unable to identify specific LEGO items in the image. Manual assessment recommended.",
+      "suggested_platforms": [
+        "facebook_marketplace"
+      ],
+      "market_data": null,
+      "individual_valuations": [],
+      "exchange_rate_usd_eur": null
+    },
+    "notes": "Test of enhanced system with real LEGO collection",
+    "created_at": "2025-09-06 13:17:12.856525"
+  },
+  "backup_timestamp": "2025-09-06T13:17:12.864726",
+  "version": "1.0"
+}

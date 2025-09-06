@@ -1,0 +1,31 @@
+{
+  "report": {
+    "id": null,
+    "image_filename": "img-20250905-101709_514ccd2b.jpg",
+    "image_path": "data/uploads/optimized/opt_img-20250905-101709_514ccd2b.jpg",
+    "upload_timestamp": "2025-09-06 13:17:07.996800",
+    "identification": {
+      "confidence_score": 0.1,
+      "identified_items": [],
+      "description": "All identification methods failed",
+      "condition_assessment": "Cannot assess"
+    },
+    "valuation": {
+      "estimated_value": 0.0,
+      "estimated_value_eur": 0.0,
+      "confidence_score": 0.1,
+      "recommendation": "collection",
+      "reasoning": "Unable to identify specific LEGO items in the image. Manual assessment recommended.",
+      "suggested_platforms": [
+        "facebook_marketplace"
+      ],
+      "market_data": null,
+      "individual_valuations": [],
+      "exchange_rate_usd_eur": null
+    },
+    "notes": "Test of enhanced system with real LEGO collection",
+    "created_at": "2025-09-06 13:17:07.996808"
+  },
+  "backup_timestamp": "2025-09-06T13:17:08.000025",
+  "version": "1.0"
+}

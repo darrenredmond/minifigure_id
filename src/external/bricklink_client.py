@@ -84,6 +84,7 @@ class BrickLinkClient:
         ):
             return []
 
+        # Use the correct BrickLink API endpoint format
         url = f"{self.BASE_URL}/items/{item_type}"
         params = {"name": search_term}
 
