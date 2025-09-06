@@ -8,7 +8,7 @@ import requests
 from datetime import datetime, timedelta
 
 from config.settings import settings
-from src.models.schemas import MarketData
+from src.models.schemas import MarketData, DetailedPricing
 
 
 class BrickLinkClient:
@@ -275,3 +275,99 @@ class BrickLinkClient:
             ]
 
         return results[:10]  # Limit results
+
+    def get_detailed_pricing(
+        self, item_type: str, item_no: str
+    ) -> Optional[DetailedPricing]:
+        """Get detailed pricing for multiple conditions and currencies"""
+        if not all([self.consumer_key, self.consumer_secret, self.token_value, self.token_secret]):
+            return None
+
+        # BrickLink expects full item numbers with suffix (e.g., "75159-1")
+        if item_type == "SET" and "-" not in item_no:
+            item_no = f"{item_no}-1"
+
+        pricing = DetailedPricing()
+
+        # Get pricing for different conditions
+        conditions = [("N", "new"), ("U", "used")]
+        currencies = [("USD", "usd"), ("EUR", "eur")]
+
+        for condition_code, condition_name in conditions:
+            for currency_code, currency_suffix in currencies:
+                try:
+                    market_data = self._get_price_guide_currency(
+                        item_type, item_no, condition_code, currency_code
+                    )
+                    if market_data:
+                        price = market_data.current_price
+                        if price:
+                            if condition_name == "new" and currency_suffix == "usd":
+                                pricing.sealed_new_usd = price
+                            elif condition_name == "new" and currency_suffix == "eur":
+                                pricing.sealed_new_eur = price
+                            elif condition_name == "used" and currency_suffix == "usd":
+                                pricing.used_complete_usd = price
+                            elif condition_name == "used" and currency_suffix == "eur":
+                                pricing.used_complete_eur = price
+                except Exception as e:
+                    print(f"Error getting {condition_name} {currency_suffix.upper()} pricing: {e}")
+                    continue
+
+        # Estimate other conditions based on used_complete prices
+        if pricing.used_complete_usd:
+            pricing.used_incomplete_usd = pricing.used_complete_usd * 0.7
+            pricing.missing_instructions_usd = pricing.used_complete_usd * 0.85
+            pricing.missing_box_usd = pricing.used_complete_usd * 0.9
+        
+        if pricing.used_complete_eur:
+            pricing.used_incomplete_eur = pricing.used_complete_eur * 0.7
+            pricing.missing_instructions_eur = pricing.used_complete_eur * 0.85
+            pricing.missing_box_eur = pricing.used_complete_eur * 0.9
+
+        return pricing
+
+    def _get_price_guide_currency(
+        self, item_type: str, item_no: str, condition: str, currency: str
+    ) -> Optional[MarketData]:
+        """Get price guide for specific currency"""
+        url = f"{self.BASE_URL}/items/{item_type}/{item_no}/price"
+        params = {
+            "guide_type": "stock",
+            "new_or_used": condition,
+            "currency_code": currency,
+            "color_id": "0",
+        }
+
+        try:
+            headers = self._get_oauth_headers("GET", url, params)
+            response = requests.get(url, params=params, headers=headers, timeout=10)
+            data = response.json()
+
+            if response.status_code == 200:
+                price_data = data.get("data", {})
+                return MarketData(
+                    current_price=price_data.get("avg_price"),
+                    avg_price_6m=price_data.get("avg_price"),
+                    times_sold=price_data.get("times_sold"),
+                    availability=self._determine_availability(price_data.get("times_sold", 0)),
+                )
+            else:
+                return None
+        except Exception as e:
+            print(f"Error getting {currency} price guide: {e}")
+            return None
+
+    def get_current_exchange_rate(self) -> Optional[float]:
+        """Get current USD to EUR exchange rate"""
+        try:
+            # Use a free exchange rate API
+            response = requests.get("https://api.exchangerate-api.com/v4/latest/USD", timeout=5)
+            if response.status_code == 200:
+                data = response.json()
+                return data.get("rates", {}).get("EUR")
+        except Exception as e:
+            print(f"Error getting exchange rate: {e}")
+        
+        # Fallback to approximate rate if API fails
+        return 0.85

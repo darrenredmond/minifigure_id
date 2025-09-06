@@ -50,13 +50,43 @@ class MarketData(BaseModel):
     availability: Optional[str] = None  # "common", "uncommon", "rare", "very_rare"
 
 
+class DetailedPricing(BaseModel):
+    """Detailed pricing for different conditions"""
+    msrp_usd: Optional[float] = None
+    msrp_eur: Optional[float] = None
+    sealed_new_usd: Optional[float] = None
+    sealed_new_eur: Optional[float] = None
+    used_complete_usd: Optional[float] = None
+    used_complete_eur: Optional[float] = None
+    used_incomplete_usd: Optional[float] = None
+    used_incomplete_eur: Optional[float] = None
+    missing_instructions_usd: Optional[float] = None
+    missing_instructions_eur: Optional[float] = None
+    missing_box_usd: Optional[float] = None
+    missing_box_eur: Optional[float] = None
+
+
+class ItemValuation(BaseModel):
+    """Individual item valuation with detailed pricing"""
+    item: LegoItem
+    detailed_pricing: Optional[DetailedPricing] = None
+    estimated_individual_value_usd: Optional[float] = None
+    estimated_individual_value_eur: Optional[float] = None
+    confidence_score: float = Field(ge=0, le=1)
+    market_data: Optional[MarketData] = None
+    notes: Optional[str] = None
+
+
 class ValuationResult(BaseModel):
     estimated_value: float
+    estimated_value_eur: Optional[float] = None
     confidence_score: float = Field(ge=0, le=1)
     recommendation: RecommendationCategory
     reasoning: str
     suggested_platforms: List[PlatformType]
     market_data: Optional[MarketData] = None
+    individual_valuations: List[ItemValuation] = []
+    exchange_rate_usd_eur: Optional[float] = None
 
 
 class IdentificationResult(BaseModel):
@@ -69,6 +99,7 @@ class IdentificationResult(BaseModel):
 class ValuationReport(BaseModel):
     id: Optional[str] = None
     image_filename: str
+    image_path: Optional[str] = None
     upload_timestamp: datetime
     identification: IdentificationResult
     valuation: ValuationResult

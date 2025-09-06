@@ -11,6 +11,8 @@ from src.models.schemas import (
     PlatformType,
     ItemCondition,
     ItemType,
+    ItemValuation,
+    DetailedPricing,
 )
 from src.external.bricklink_client import BrickLinkClient
 
@@ -22,22 +24,37 @@ class ValuationEngine:
     async def evaluate_item(
         self, identification: IdentificationResult
     ) -> ValuationResult:
-        """Main evaluation method that combines all valuation factors"""
+        """Main evaluation method that combines all valuation factors with individual item breakdown"""
         if not identification.identified_items:
             return self._create_fallback_valuation(identification)
 
-        # Get market data for identified items
-        market_data_list = []
-        total_estimated_value = 0.0
+        # Get current exchange rate
+        exchange_rate = self.bricklink_client.get_current_exchange_rate()
+
+        # Create individual valuations for each item
+        individual_valuations = []
+        total_estimated_value_usd = 0.0
         confidence_scores = []
+        market_data_list = []
 
         for item in identification.identified_items:
-            market_data = await self._get_market_data(item)
-            market_data_list.append(market_data)
+            # Create individual valuation
+            item_valuation = await self._create_individual_valuation(item, exchange_rate)
+            individual_valuations.append(item_valuation)
+            
+            # Add to totals
+            if item_valuation.estimated_individual_value_usd:
+                total_estimated_value_usd += item_valuation.estimated_individual_value_usd
+            confidence_scores.append(item_valuation.confidence_score)
+            
+            # Collect market data for reasoning
+            if item_valuation.market_data:
+                market_data_list.append(item_valuation.market_data)
 
-            item_value, item_confidence = self._calculate_item_value(item, market_data)
-            total_estimated_value += item_value
-            confidence_scores.append(item_confidence)
+        # Calculate EUR total
+        total_estimated_value_eur = None
+        if exchange_rate and total_estimated_value_usd > 0:
+            total_estimated_value_eur = total_estimated_value_usd * exchange_rate
 
         # Calculate overall confidence
         avg_confidence = (
@@ -51,29 +68,32 @@ class ValuationEngine:
 
         # Determine recommendation category
         recommendation = self._determine_recommendation_category(
-            total_estimated_value, identification
+            total_estimated_value_usd, identification
         )
 
         # Get suggested platforms
         suggested_platforms = self._get_suggested_platforms(
-            total_estimated_value, identification.identified_items
+            total_estimated_value_usd, identification.identified_items
         )
 
         # Create reasoning
         reasoning = self._generate_reasoning(
-            identification, market_data_list, total_estimated_value, recommendation
+            identification, market_data_list, total_estimated_value_usd, recommendation
         )
 
         # Use the first market data item for the combined result
         combined_market_data = market_data_list[0] if market_data_list else None
 
         return ValuationResult(
-            estimated_value=total_estimated_value,
+            estimated_value=total_estimated_value_usd,
+            estimated_value_eur=total_estimated_value_eur,
             confidence_score=final_confidence,
             recommendation=recommendation,
             reasoning=reasoning,
             suggested_platforms=suggested_platforms,
             market_data=combined_market_data,
+            individual_valuations=individual_valuations,
+            exchange_rate_usd_eur=exchange_rate,
         )
 
     async def _get_market_data(self, item: LegoItem) -> MarketData:
@@ -93,6 +113,56 @@ class ValuationEngine:
         )
 
         return market_data or MarketData()
+
+    async def _create_individual_valuation(
+        self, item: LegoItem, exchange_rate: float
+    ) -> ItemValuation:
+        """Create detailed individual valuation for a single item"""
+        
+        # Get basic market data
+        market_data = await self._get_market_data(item)
+        
+        # Get detailed pricing if item number is available
+        detailed_pricing = None
+        if item.item_number:
+            bl_item_type = "MINIFIG" if item.item_type == ItemType.MINIFIGURE else "SET"
+            detailed_pricing = self.bricklink_client.get_detailed_pricing(
+                bl_item_type, item.item_number
+            )
+        
+        # Calculate individual item value
+        item_value_usd, item_confidence = self._calculate_item_value(item, market_data)
+        
+        # Calculate EUR value
+        item_value_eur = None
+        if exchange_rate and item_value_usd > 0:
+            item_value_eur = item_value_usd * exchange_rate
+        
+        # Create notes based on item characteristics
+        notes = []
+        if item.theme:
+            notes.append(f"Theme: {item.theme}")
+        if item.year_released:
+            current_year = datetime.now().year
+            age = current_year - item.year_released
+            if age > 20:
+                notes.append("Vintage item (20+ years old)")
+            elif age > 10:
+                notes.append("Classic item (10+ years old)")
+        if market_data and market_data.availability:
+            notes.append(f"Availability: {market_data.availability}")
+        
+        notes_text = "; ".join(notes) if notes else None
+        
+        return ItemValuation(
+            item=item,
+            detailed_pricing=detailed_pricing,
+            estimated_individual_value_usd=item_value_usd if item_value_usd > 0 else None,
+            estimated_individual_value_eur=item_value_eur if item_value_eur and item_value_eur > 0 else None,
+            confidence_score=item_confidence,
+            market_data=market_data,
+            notes=notes_text,
+        )
 
     def _calculate_item_value(
         self, item: LegoItem, market_data: MarketData
@@ -267,9 +337,12 @@ class ValuationEngine:
         """Create a fallback valuation when no items are identified"""
         return ValuationResult(
             estimated_value=0.0,
+            estimated_value_eur=0.0,
             confidence_score=0.1,
             recommendation=RecommendationCategory.COLLECTION,
             reasoning="Unable to identify specific LEGO items in the image. Manual assessment recommended.",
             suggested_platforms=[PlatformType.FACEBOOK_MARKETPLACE],
             market_data=None,
+            individual_valuations=[],
+            exchange_rate_usd_eur=None,
         )

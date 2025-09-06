@@ -1,16 +1,23 @@
 import base64
 import json
+import os
 from typing import List, Dict, Any
 from pathlib import Path
 import anthropic
+import logging
 
 from config.settings import settings
 from src.models.schemas import IdentificationResult, LegoItem, ItemType, ItemCondition
+from src.utils.rate_limiter import AnthropicRateLimiter
+
+logger = logging.getLogger(__name__)
 
 
 class LegoIdentifier:
     def __init__(self):
         self.client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+        # Initialize rate limiter
+        self.rate_limiter = AnthropicRateLimiter()
 
     def _encode_image(self, image_path: str) -> str:
         """Encode image to base64 for Claude API"""
@@ -58,11 +65,27 @@ class LegoIdentifier:
         Be thorough but honest about uncertainty. If you're not sure about specific details, indicate lower confidence or use null values."""
 
     async def identify_lego_items(self, image_path: str) -> IdentificationResult:
-        """Identify LEGO items in the provided image using Claude Vision"""
+        """Identify LEGO items in the provided image using Claude Vision with rate limiting"""
         try:
             # Encode image
             image_base64 = self._encode_image(image_path)
             image_media_type = "image/jpeg"  # Assuming optimized images are JPEG
+
+            # Estimate token usage for rate limiting
+            image_size = os.path.getsize(image_path)
+            estimated_image_tokens = self.rate_limiter.estimate_image_tokens(image_size)
+            prompt = self._get_identification_prompt()
+            estimated_prompt_tokens = self.rate_limiter.estimate_prompt_tokens(prompt)
+            total_estimated_tokens = estimated_image_tokens + estimated_prompt_tokens
+            
+            logger.info(f"Estimated tokens for request: {total_estimated_tokens} (image: {estimated_image_tokens}, prompt: {estimated_prompt_tokens})")
+            
+            # Check rate limits and wait if necessary
+            await self.rate_limiter.wait_for_capacity(total_estimated_tokens)
+            
+            # Log usage stats before making request
+            stats = self.rate_limiter.get_usage_stats()
+            logger.info(f"Rate limiter stats: {stats['current_input_tokens']}/{stats['max_input_tokens_per_minute']} tokens used, {stats['current_requests']}/{stats['max_requests_per_minute']} requests made")
 
             # Make API call to Claude (using Claude 4 Sonnet for superior accuracy)
             # Note: The client.messages.create is not async in the anthropic package
@@ -90,6 +113,13 @@ class LegoIdentifier:
                 ],
                 system=self._get_identification_prompt(),
             )
+            
+            # Record actual usage (estimate input tokens, get actual output tokens if available)
+            actual_input_tokens = getattr(message.usage, 'input_tokens', total_estimated_tokens)
+            actual_output_tokens = getattr(message.usage, 'output_tokens', 0)
+            self.rate_limiter.record_usage(actual_input_tokens, actual_output_tokens)
+            
+            logger.info(f"API call completed. Actual tokens: input={actual_input_tokens}, output={actual_output_tokens}")
 
             # Parse response
             response_text = message.content[0].text
