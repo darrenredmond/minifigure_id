@@ -237,6 +237,31 @@ cp data/backup.db data/minifigure_valuation.db
 
 ### 5. Web Interface Issues
 
+#### Problem: Static Directory Missing
+```
+RuntimeError: Directory 'src/web/static' does not exist
+```
+
+**Solutions:**
+
+1. **Create Static Directory:**
+```bash
+mkdir -p src/web/static
+echo "# Static files directory" > src/web/static/.gitkeep
+```
+
+2. **Use Validation Script:**
+```bash
+python validate_tests.py  # Auto-creates missing directories
+```
+
+3. **Manual Fix in Code:**
+```python
+# The app now auto-creates the directory, but you can also:
+from pathlib import Path
+Path("src/web/static").mkdir(parents=True, exist_ok=True)
+```
+
 #### Problem: Server Won't Start
 ```
 OSError: [Errno 48] Address already in use

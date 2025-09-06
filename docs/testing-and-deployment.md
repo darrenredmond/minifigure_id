@@ -12,21 +12,34 @@ The system uses pytest for comprehensive testing across multiple levels:
 ### Test Commands
 
 ```bash
-# Run all tests
-pytest
+# Use the test runner script (recommended)
+./run_tests.sh all                    # Run all tests with coverage
+./run_tests.sh api                    # Run API endpoint tests
+./run_tests.sh unit                   # Run unit tests only
+./run_tests.sh integration            # Run integration tests
+./run_tests.sh fast                   # Run fast tests (exclude slow ones)
+./run_tests.sh coverage               # Generate detailed coverage report
+
+# Or use pytest directly
+pytest                                # Run all tests
+pytest -m "api"                       # Run API endpoint tests  
+pytest -m "unit"                      # Run unit tests
+pytest -m "integration"               # Run integration tests
+pytest -m "not slow"                  # Exclude slow tests
 
 # Run specific test files
-pytest tests/test_lego_identifier.py
-pytest tests/test_valuation_engine.py
-pytest tests/test_report_generator.py
+pytest tests/test_api_endpoints.py    # API endpoint tests
+pytest tests/test_lego_identifier.py  # LEGO identifier tests
+pytest tests/test_valuation_engine.py # Valuation engine tests
+pytest tests/test_report_generator.py # Report generator tests
 
 # Run with coverage
-pytest --cov=src --cov-report=term-missing
+pytest --cov=src --cov-report=term-missing --cov-report=html
 
 # Run integration tests (requires API keys)
 pytest tests/test_integration.py -v -s
 
-# Run specific integration test
+# Run specific integration test  
 pytest tests/test_integration.py::TestRealAPIIntegration::test_claude_vision_with_lego_image -v -s
 ```
 
@@ -77,6 +90,32 @@ def test_generate_pdf_report(self, mock_doc_class, report_generator, sample_repo
 
 def test_generate_html_report(self, report_generator, sample_report):
     """Test HTML report generation"""
+```
+
+#### `tests/test_api_endpoints.py`
+Tests for FastAPI web interface:
+- HTTP endpoint functionality
+- Request/response validation
+- Error handling and status codes
+- Background task processing
+- File upload handling
+- Database integration
+- CORS and middleware
+
+**Key Test Classes:**
+```python
+@pytest.mark.api
+class TestUploadEndpoint(TestAPIEndpoints):
+    """Test image upload endpoint"""
+
+@pytest.mark.api  
+class TestValuationsEndpoint(TestAPIEndpoints):
+    """Test valuations listing endpoint"""
+
+@pytest.mark.api
+@pytest.mark.integration
+class TestIntegrationScenarios(TestAPIEndpoints):
+    """Test complete integration scenarios"""
 ```
 
 ### Integration Tests

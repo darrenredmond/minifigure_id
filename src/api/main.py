@@ -46,8 +46,14 @@ async def startup_event():
     create_tables()
 
 
-# Serve static files
-app.mount("/static", StaticFiles(directory="src/web/static"), name="static")
+# Serve static files (conditional mounting)
+static_dir = Path("src/web/static")
+if static_dir.exists():
+    app.mount("/static", StaticFiles(directory="src/web/static"), name="static")
+else:
+    # Create directory if it doesn't exist
+    static_dir.mkdir(parents=True, exist_ok=True)
+    app.mount("/static", StaticFiles(directory="src/web/static"), name="static")
 
 
 @app.get("/", response_class=HTMLResponse)

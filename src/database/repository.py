@@ -11,12 +11,36 @@ from src.models.schemas import ValuationReport, IdentificationResult, ValuationR
 class ValuationRepository:
     """Repository for valuation record operations"""
 
-    def __init__(self, db_manager):
-        self.db_manager = db_manager
+    def __init__(self, db_session_or_manager):
+        # Support both Session objects (for API) and db_manager (for direct usage)
+        if hasattr(db_session_or_manager, 'query'):
+            # It's a Session object
+            self.db_session = db_session_or_manager
+            self.db_manager = None
+        else:
+            # It's a db_manager
+            self.db_manager = db_session_or_manager
+            self.db_session = None
+
+    def _get_session_context(self):
+        """Get session context manager or direct session"""
+        if self.db_session:
+            # For API usage - return the session directly
+            class DirectSession:
+                def __init__(self, session):
+                    self.session = session
+                def __enter__(self):
+                    return self.session
+                def __exit__(self, exc_type, exc_val, exc_tb):
+                    pass
+            return DirectSession(self.db_session)
+        else:
+            # For direct usage - return the context manager
+            return self.db_manager.get_session_context()  # Fixed: was self._get_session_context()
 
     def save_valuation(self, report: ValuationReport) -> int:
         """Save a valuation report to the database"""
-        with self.db_manager.get_session_context() as session:
+        with self._get_session_context() as session:
             # Serialize complex objects to JSON
             identification_data = {
                 "confidence_score": report.identification.confidence_score,
@@ -52,7 +76,7 @@ class ValuationRepository:
 
     def get_valuation(self, valuation_id: int) -> Optional[dict]:
         """Get a valuation record by ID, returned as dict to avoid session issues"""
-        with self.db_manager.get_session_context() as session:
+        with self._get_session_context() as session:
             valuation = session.query(ValuationRecord).filter(
                 ValuationRecord.id == valuation_id
             ).first()
@@ -72,14 +96,14 @@ class ValuationRepository:
 
     def list_valuations(self, limit: int = 50, offset: int = 0) -> List[ValuationRecord]:
         """List valuation records with pagination"""
-        with self.db_manager.get_session_context() as session:
+        with self._get_session_context() as session:
             return session.query(ValuationRecord).order_by(
                 desc(ValuationRecord.created_at)
             ).limit(limit).offset(offset).all()
 
     def search_valuations(self, search_term: str) -> List[ValuationRecord]:
         """Search valuations by item name or description"""
-        with self.db_manager.get_session_context() as session:
+        with self._get_session_context() as session:
             # Search in JSON fields - SQLite doesn't have full JSON support
             # So we'll search in the reasoning and notes fields
             return session.query(ValuationRecord).filter(
@@ -91,7 +115,7 @@ class ValuationRepository:
 
     def get_statistics(self) -> Dict[str, Any]:
         """Get valuation statistics"""
-        with self.db_manager.get_session_context() as session:
+        with self._get_session_context() as session:
             total_valuations = session.query(func.count(ValuationRecord.id)).scalar()
             total_value = session.query(func.sum(ValuationRecord.estimated_value)).scalar() or 0
             average_value = total_value / total_valuations if total_valuations > 0 else 0
@@ -104,7 +128,7 @@ class ValuationRepository:
 
     def save_market_data(self, valuation_id: int, item_number: str, item_name: str, market_data: MarketData) -> int:
         """Save market data for a valuation (updates the valuation record)"""
-        with self.db_manager.get_session_context() as session:
+        with self._get_session_context() as session:
             valuation = session.query(ValuationRecord).filter(
                 ValuationRecord.id == valuation_id
             ).first()
@@ -117,7 +141,7 @@ class ValuationRepository:
 
     def update_valuation_status(self, valuation_id: int, status: str) -> bool:
         """Update valuation status"""
-        with self.db_manager.get_session_context() as session:
+        with self._get_session_context() as session:
             valuation = session.query(ValuationRecord).filter(
                 ValuationRecord.id == valuation_id
             ).first()
@@ -130,7 +154,7 @@ class ValuationRepository:
 
     def delete_valuation(self, valuation_id: int) -> bool:
         """Delete a valuation record"""
-        with self.db_manager.get_session_context() as session:
+        with self._get_session_context() as session:
             valuation = session.query(ValuationRecord).filter(
                 ValuationRecord.id == valuation_id
             ).first()
@@ -142,22 +166,38 @@ class ValuationRepository:
 
     def get_valuations_by_date_range(self, start_date: datetime, end_date: datetime) -> List[ValuationRecord]:
         """Get valuations within a date range"""
-        with self.db_manager.get_session_context() as session:
+        with self._get_session_context() as session:
             return session.query(ValuationRecord).filter(
                 ValuationRecord.created_at >= start_date,
                 ValuationRecord.created_at <= end_date
             ).order_by(desc(ValuationRecord.created_at)).all()
 
+    # API compatibility methods - these are what the FastAPI endpoints expect
+    def list_valuation_records(self, skip: int = 0, limit: int = 20) -> List[ValuationRecord]:
+        """List valuation records with pagination (API compatibility method)"""
+        return self.list_valuations(limit=limit, offset=skip)
+    
+    def get_valuation_record(self, valuation_id: int) -> Optional[ValuationRecord]:
+        """Get a valuation record by ID (API compatibility method)"""
+        with self._get_session_context() as session:
+            return session.query(ValuationRecord).filter(
+                ValuationRecord.id == valuation_id
+            ).first()
+    
+    def create_valuation_record(self, report: ValuationReport) -> int:
+        """Create a valuation record (API compatibility method)"""
+        return self.save_valuation(report)
+
     def get_valuations_by_recommendation(self, recommendation: str) -> List[ValuationRecord]:
         """Get valuations by recommendation category"""
-        with self.db_manager.get_session_context() as session:
+        with self._get_session_context() as session:
             return session.query(ValuationRecord).filter(
                 ValuationRecord.recommendation_category == recommendation
             ).all()
 
     def get_high_value_items(self, min_value: float = 100.0) -> List[ValuationRecord]:
         """Get high-value items above a threshold"""
-        with self.db_manager.get_session_context() as session:
+        with self._get_session_context() as session:
             return session.query(ValuationRecord).filter(
                 ValuationRecord.estimated_value >= min_value
             ).order_by(desc(ValuationRecord.estimated_value)).all()
@@ -166,12 +206,36 @@ class ValuationRepository:
 class InventoryRepository:
     """Repository for inventory item operations"""
 
-    def __init__(self, db_manager):
-        self.db_manager = db_manager
+    def __init__(self, db_session_or_manager):
+        # Support both Session objects (for API) and db_manager (for direct usage)
+        if hasattr(db_session_or_manager, 'query'):
+            # It's a Session object
+            self.db_session = db_session_or_manager
+            self.db_manager = None
+        else:
+            # It's a db_manager
+            self.db_manager = db_session_or_manager
+            self.db_session = None
+
+    def _get_session_context(self):
+        """Get session context manager or direct session"""
+        if self.db_session:
+            # For API usage - return the session directly
+            class DirectSession:
+                def __init__(self, session):
+                    self.session = session
+                def __enter__(self):
+                    return self.session
+                def __exit__(self, exc_type, exc_val, exc_tb):
+                    pass
+            return DirectSession(self.db_session)
+        else:
+            # For direct usage - return the context manager
+            return self.db_manager.get_session_context()
 
     def add_item(self, item_data: Dict[str, Any]) -> int:
         """Add an item to inventory"""
-        with self.db_manager.get_session_context() as session:
+        with self._get_session_context() as session:
             item = InventoryItem(**item_data)
             session.add(item)
             session.flush()
@@ -179,14 +243,14 @@ class InventoryRepository:
 
     def get_item(self, item_id: int) -> Optional[InventoryItem]:
         """Get inventory item by ID"""
-        with self.db_manager.get_session_context() as session:
+        with self._get_session_context() as session:
             return session.query(InventoryItem).filter(
                 InventoryItem.id == item_id
             ).first()
 
     def update_item_status(self, item_id: int, status: str) -> bool:
         """Update item status"""
-        with self.db_manager.get_session_context() as session:
+        with self._get_session_context() as session:
             item = session.query(InventoryItem).filter(
                 InventoryItem.id == item_id
             ).first()
@@ -199,10 +263,50 @@ class InventoryRepository:
 
     def get_available_items(self) -> List[InventoryItem]:
         """Get all available inventory items"""
-        with self.db_manager.get_session_context() as session:
+        with self._get_session_context() as session:
             return session.query(InventoryItem).filter(
                 InventoryItem.status == "in_inventory"
             ).all()
+
+    # API compatibility methods - these are what the FastAPI endpoints expect
+    def list_inventory(self) -> List[InventoryItem]:
+        """List all inventory items (API compatibility method)"""
+        with self._get_session_context() as session:
+            return session.query(InventoryItem).order_by(
+                desc(InventoryItem.created_at)
+            ).all()
+    
+    def get_inventory_summary(self) -> Dict[str, Any]:
+        """Get inventory summary statistics (API compatibility method)"""
+        with self._get_session_context() as session:
+            total_items = session.query(func.count(InventoryItem.id)).scalar() or 0
+            total_value = session.query(func.sum(InventoryItem.estimated_value)).scalar() or 0
+            available_items = session.query(func.count(InventoryItem.id)).filter(
+                InventoryItem.status == "in_inventory"
+            ).scalar() or 0
+            
+            return {
+                "total_items": total_items,
+                "total_value": float(total_value),
+                "available_items": available_items,
+                "average_value": float(total_value / total_items) if total_items > 0 else 0
+            }
+    
+    def create_from_valuation(self, valuation_record, location: str = "") -> InventoryItem:
+        """Create inventory item from valuation record (API compatibility method)"""
+        with self._get_session_context() as session:
+            item = InventoryItem(
+                item_name=valuation_record.image_filename,  # Fallback name
+                item_type="unknown",  # Will be updated when we have better data
+                estimated_value=valuation_record.estimated_value,
+                location=location,
+                status="in_inventory",
+                source_valuation_id=valuation_record.id,
+                created_at=datetime.utcnow()
+            )
+            session.add(item)
+            session.flush()
+            return item
 
 
 class SaleRepository:
@@ -213,7 +317,7 @@ class SaleRepository:
 
     def record_sale(self, sale_data: Dict[str, Any]) -> int:
         """Record a sale"""
-        with self.db_manager.get_session_context() as session:
+        with self._get_session_context() as session:
             # Calculate net profit if not provided
             if 'net_profit' not in sale_data:
                 sale_price = sale_data.get('sale_price', 0)
@@ -228,7 +332,7 @@ class SaleRepository:
 
     def get_sales_by_date_range(self, start_date: datetime, end_date: datetime) -> List[SaleRecord]:
         """Get sales within a date range"""
-        with self.db_manager.get_session_context() as session:
+        with self._get_session_context() as session:
             return session.query(SaleRecord).filter(
                 SaleRecord.sold_date >= start_date,
                 SaleRecord.sold_date <= end_date
@@ -236,7 +340,7 @@ class SaleRepository:
 
     def get_sales_statistics(self) -> Dict[str, Any]:
         """Get sales statistics"""
-        with self.db_manager.get_session_context() as session:
+        with self._get_session_context() as session:
             total_sales = session.query(func.count(SaleRecord.id)).scalar()
             total_revenue = session.query(func.sum(SaleRecord.sale_price)).scalar() or 0
             total_profit = session.query(func.sum(SaleRecord.net_profit)).scalar() or 0
