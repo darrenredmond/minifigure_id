@@ -136,11 +136,17 @@ class BrickLinkClient:
         ):
             return None
 
+        # BrickLink expects full item numbers with suffix (e.g., "75159-1")
+        # Add -1 suffix if not present for sets
+        if item_type == "SET" and "-" not in item_no:
+            item_no = f"{item_no}-1"
+
         url = f"{self.BASE_URL}/items/{item_type}/{item_no}/price"
         params = {
             "guide_type": "stock",
             "new_or_used": condition,  # N for new, U for used
             "currency_code": "USD",
+            "color_id": "0",  # Required for sets, 0 means no specific color
         }
 
         try:
@@ -203,6 +209,11 @@ class BrickLinkClient:
         ):
             return None
 
+        # BrickLink expects full item numbers with suffix (e.g., "75159-1")
+        # Add -1 suffix if not present for sets
+        if item_type == "SET" and "-" not in item_no:
+            item_no = f"{item_no}-1"
+            
         url = f"{self.BASE_URL}/items/{item_type}/{item_no}"
 
         try:

@@ -18,12 +18,14 @@ sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from config.settings import settings
 from src.database.database import DatabaseManager
+from src.database.models import ValuationRecord
 from src.utils.image_processor import ImageProcessor
 from src.core.lego_identifier import LegoIdentifier
 from src.core.valuation_engine import ValuationEngine
 from src.core.report_generator import ReportGenerator
 from src.database.repository import ValuationRepository, InventoryRepository
 from src.models.schemas import ValuationReport
+from sqlalchemy import desc
 
 
 class LegoValuationCLI:
@@ -84,14 +86,13 @@ class LegoValuationCLI:
             )
             
             # Save to database
-            with self.db_manager.get_session() as db:
-                repo = ValuationRepository(db)
-                record = repo.create_valuation_record(report)
-                print(f"✓ Saved to database (ID: {record.id})")
+            repo = ValuationRepository(self.db_manager)
+            valuation_id = repo.save_valuation(report)
+            print(f"✓ Saved to database (ID: {valuation_id})")
             
             # Generate reports
-            pdf_path = self.report_generator.generate_pdf_report(report)
-            html_path = self.report_generator.generate_html_report(report)
+            pdf_path = self.report_generator.generate_pdf(report)
+            html_path = self.report_generator.generate_html(report)
             
             print("\n" + "="*50)
             print("VALUATION RESULTS")
@@ -110,7 +111,7 @@ class LegoValuationCLI:
             print(f"  - HTML: {html_path}")
             print("="*50)
             
-            return record.id
+            return valuation_id
             
         except Exception as e:
             print(f"❌ Error processing image: {e}")
@@ -118,9 +119,10 @@ class LegoValuationCLI:
     
     def list_valuations(self, limit: int = 10):
         """List recent valuations"""
-        with self.db_manager.get_session() as db:
-            repo = ValuationRepository(db)
-            records = repo.list_valuation_records(limit=limit)
+        repo = ValuationRepository(self.db_manager)
+        
+        with self.db_manager.get_session_context() as session:
+            records = session.query(ValuationRecord).order_by(desc(ValuationRecord.created_at)).limit(limit).all()
             
             if not records:
                 print("No valuations found.")
@@ -136,26 +138,14 @@ class LegoValuationCLI:
     
     def show_inventory_summary(self):
         """Show inventory summary"""
-        with self.db_manager.get_session() as db:
-            repo = InventoryRepository(db)
-            summary = repo.get_inventory_summary()
-            items = repo.list_inventory()[:10]  # Top 10
-            
-            print("\nInventory Summary:")
-            print("-" * 40)
-            print(f"Total Items: {summary['total_items']}")
-            print(f"Total Value: ${summary['total_estimated_value']:.2f}")
-            
-            if summary['items_by_status']:
-                print("\nBy Status:")
-                for status, count in summary['items_by_status'].items():
-                    print(f"  {status}: {count}")
-            
-            if items:
-                print(f"\nTop Items by Value:")
-                print("-" * 60)
-                for item in items:
-                    print(f"${item.estimated_value:8.2f} | {item.item_name[:40]}")
+        repo = ValuationRepository(self.db_manager)
+        stats = repo.get_statistics()
+        
+        print("\nValuation Summary:")
+        print("-" * 40)
+        print(f"Total Valuations: {stats['total_valuations']}")
+        print(f"Total Value: ${stats['total_value']:.2f}")
+        print(f"Average Value: ${stats['average_value']:.2f}")
     
     def run_web_server(self):
         """Start the web server"""
