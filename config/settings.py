@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     # App settings
     debug: bool = False
     max_upload_size: int = 10485760  # 10MB
-    allowed_image_types: List[str] = ["jpg", "jpeg", "png", "webp"]
+    allowed_image_types: List[str] = ["jpg", "jpeg", "png", "webp", "gif"]
     
     # Valuation thresholds
     museum_threshold: float = 500.0
